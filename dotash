@@ -1,0 +1,270 @@
+#!/bin/bash
+ProgName="$(basename -- "$0")"
+ProgName="${ProgName:-DotAsh}"
+CONFIG_FILE="DotAsh.conf"
+LOCK_FILE="$HOME/.cache/DotAsh.lock"
+
+## COLOR
+Color_Off='\033[0m'       # Text Reset
+UWhite='\033[4;37m'       # White
+UPurple='\033[4;35m'      # Purple
+BIRed='\033[1;91m'        # Red
+BIGreen='\033[1;92m'      # Green
+BIPurple='\033[1;95m'     # Purple
+BICyan='\033[1;96m'       # Cyan
+BIWhite='\033[1;97m'      # White
+
+sub_help(){
+    echo -e "$UPurple Usage:$Color_Off $BIPurple $ProgName <Subcommands> $UWhite"
+    echo -e "Subcommands:$Color_Off"
+    echo -e "   $BWhite install     $BICyan Install dotfiles in the current directory$Color_Off"
+    echo -e "   $BWhite uninstall   $BIRed Uninstall dotfiles in the current directory$Color_Off"
+    echo -e "   $BWhite reinstall   $BICyan Reinstall dotfiles in the current directory$Color_Off"
+    echo -e "   $BWhite init        $BIGreen Create a basic $CONFIG_FILE$Color_Off"
+    echo -e "   $BWhite add         $BIGreen Add a file to your $CONFIG_FILE$Color_Off"
+    echo -e "   $BWhite remove      $BIRed Remove a file from your $CONFIG_FILE$Color_Off"
+    echo ""
+}
+
+sub_install() {
+    if [ -f $LOCK_FILE ]; then
+        echo "DotAsh has already installed your dotfiles! Please use DotAsh uninstall"
+        exit
+    fi
+    if [ -f "./$CONFIG_FILE" ]; then
+        while IFS=" " read -r NAME LOCATION TYPE; do
+            NAME=${NAME#*=}
+            LOCATION=${LOCATION#*=}
+            TYPE=${TYPE#*=}
+            LOCATION=${LOCATION/\~/$HOME}
+            if [ -h "${LOCATION}/${NAME}" ]; then
+                echo -e "$BICyan Link Exists ${PWD}/${NAME} -> ${LOCATION}/${NAME}$Color_Off"
+            else
+                if [ $TYPE == 'same' ]; then
+                    echo -e "$BICyan ${PWD}/${NAME} ->> ${LOCATION}/${NAME}$Color_Off"
+                    rm -rf "${LOCATION}/${NAME}"
+                    ln -s "${PWD}/${NAME}" "${LOCATION}/${NAME}"
+                else
+                    echo -e "$BICyan ${PWD}/${NAME} ->> ${LOCATION}$Color_Off"
+                    rm -rf "${LOCATION}"
+                    ln -s "${PWD}/${NAME}" "${LOCATION}"
+                fi
+            fi
+        done < "./$CONFIG_FILE" && touch $LOCK_FILE &&
+        echo -e "$BIGreen All links have been set up $Color_Off"
+    else
+        echo "This directory does not have a $CONFIG_FILE!"
+    fi
+}
+
+sub_preview() {
+    if [ -f "./$CONFIG_FILE" ]; then
+        while IFS=" " read -r src dest type; do
+            if [ ${type#*=} == "same" ]; then
+                    echo -e "$BIPurple ${src#*=} -->> ${dest#*=}/${src#*=}$Color_Off"
+                else
+                    echo -e "$BIPurple ${src#*=} -->> ${dest#*=}$Color_Off"
+                fi
+        done < "./$CONFIG_FILE" && \
+        echo -e "$BIGreen look this is what install look will look like when you look at$Color_Off"
+    else
+        echo "$BIRed This directory does not have a $CONFIG_FILE!$Color_Off"
+    fi
+}
+
+
+sub_reinstall() {
+    if [ -f "./$CONFIG_FILE" ]; then
+        sub_uninstall && sub_install
+    else
+        echo "This directory does not have a $CONFIG_FILEig!"
+    fi
+}
+
+sub_uninstall() {
+    if [ ! -f "$LOCK_FILE" ]; then
+        echo "DotAsh hasn't installed your dotfiles yet!"
+        exit
+    fi
+    while IFS=" " read -r NAME LOCATION TYPE; do
+            NAME=${NAME#*=}
+            LOCATION=${LOCATION#*=}
+            TYPE=${TYPE#*=}
+            LOCATION=${LOCATION/\~/$HOME}
+        if [ $TYPE == "same" ]; then
+            rm -rf "${LOCATION:?}/${NAME}" && echo -e "$BIRed Removed ${LOCATION:?}/${NAME}$Color_Off"
+        else
+            rm -f "${LOCATION:?}" && echo -e "$BIRed Removed ${LOCATION:?}$Color_Off"
+        fi
+    done < "./$CONFIG_FILE" &&
+    echo -e "$BIRed All links have been removed$Color_Off" && rm -f $LOCK_FILE
+}
+
+draw() {
+    local idx=0
+    for it in "${opts[@]}"; do
+        local str="";
+        if [ $idx -eq $choice ]; then
+            str+="$arrow "
+        else
+            str+="  "
+        fi
+        echo "$str$it"
+        idx=$((idx+1))
+    done
+}
+
+move() {
+    for it in "${opts[@]}"; do
+        tput cuu1
+    done
+    tput el1
+}
+
+listen() {
+    while true; do
+        key=$(bash -c "read -n 1 -s key; echo \$key")
+        if [[ $key = q ]]; then
+            break
+        elif [[ $key = B ]]; then
+            if [ $choice -lt $((len-1)) ]; then
+                choice=$((choice+1))
+                move
+                draw
+            fi
+        elif [[ $key = A ]]; then
+            if [ $choice -gt 0 ]; then
+                choice=$((choice-1))
+                move
+                draw
+            fi
+        elif [[ $key = "" ]]; then
+            if [ -n "$ZSH_VERSION" ]; then
+                choice=$((choice+1))
+            fi
+            if [[ -n $__result ]]; then
+                eval "$__result=\"${opts[$choice]}\""
+            else
+                echo -e "\n${opts[$choice]}"
+            fi
+            break
+        fi
+    done
+}
+
+listbox() {
+    while [[ $# -gt 0 ]]; do
+        key="$1"
+        case $key in
+            -o|--options)
+                local OIFS=$IFS;
+                IFS="|";
+                if [ -n "$ZSH_VERSION" ]; then
+                    IFS=$'\n' opts=($(echo "$2" | tr "|" "\n"))
+                else
+                    IFS="|" read -a opts <<< "$2";
+                fi
+                IFS=$OIFS;
+                shift
+            ;;
+            -t|--title)
+                local title="$2"
+                shift
+            ;;
+            -r|--result)
+                local __result="$2"
+                shift
+            ;;
+            -a|--arrow)
+                local arrow="$2"
+                shift
+            ;;
+            *)
+        esac
+        shift
+    done
+    if [[ -z $arrow ]]; then
+        arrow=">"
+    fi
+    local len=${#opts[@]}
+    local choice=0
+    local titleLen=${#title}
+    if [[ -n "$title" ]]; then
+        echo -e "\n  $title"
+        printf %"$titleLen"s | tr " " "-"
+        echo ""
+    fi
+    draw
+    listen
+}
+
+sub_add() {
+    if [ -f "./$CONFIG_FILE" ]; then
+        read -p "What file should i track? " NAME
+        if [ -z "$NAME" ]; then
+            echo "You need to specify what file to track!"
+            exit
+        fi
+        EXISTS=$(grep $NAME "./$CONFIG_FILE")
+        if [ -n "$EXISTS" ]; then
+            echo "That file has already been added!"
+            exit
+        fi
+        read -p "Where should that file be symlinked? (eg ~/.config) " LOCATION
+        if [ -z "$LOCATION" ]; then
+            echo "You need to specify where to symlink to!"
+            exit
+        fi
+        listbox -t "Is this file the same name as it will be when copied or different?" -o "same|different" -r FILEFOLDER
+        if [ -z "$FILEFOLDER" ]; then
+            echo "You need to specify if this is a file or folder!"
+            exit
+        fi
+        echo "Location is $LOCATION"
+        echo "source_File=$NAME Dest=$LOCATION fileFolder=$FILEFOLDER" >> $CONFIG_FILE
+        if [ "$FILEFOLDER" == 'same' ]; then
+            echo -e "$BIGreen ${PWD}/${NAME} will be symlinked to ${LOCATION}/${NAME} next time you install!$Color_Off"
+        else
+            echo -e "$BIGreen ${PWD}/${NAME} will be symlinked to $LOCATION next time you install!$Color_Off"
+        fi
+    else
+        echo "This directory does not have a $CONFIG_FILE!"
+    fi
+}
+
+sub_remove() {
+    if [ -f "./$CONFIG_FILE" ]; then
+        while IFS=" " read -r src dest file; do
+            LIST+="${src#*=}|"
+        done < "./$CONFIG_FILE"
+        listbox -t "What file should i stop tracking?" -r NAME -o $LIST
+        if [ -z "$NAME" ]; then
+            echo "You need to specify what file to stop tracking!"
+            exit
+        fi
+        echo -e "$BIRed delete the $NAME entry$Color_Off"
+        sed -i /"${NAME/\//\\\/}"/d $CONFIG_FILE
+    else
+        echo "This directory does not have a $CONFIG_FILE"
+    fi
+}
+
+sub_init() {
+    touch "./$CONFIG_FILE"
+}
+
+subcommand=$1
+case $subcommand in
+    "" | "-h" | "--help")
+        sub_help
+        ;;
+    *)
+        shift
+        sub_"${subcommand}" "$@"
+        if [ $? = 127 ]; then
+            echo "Error: '$subcommand' is not a known subcommand." >&2
+            echo "       Run '$ProgName --help' for a list of known subcommands." >&2
+            exit 1
+        fi
+        ;;
+esac
