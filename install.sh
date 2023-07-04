@@ -10,6 +10,6 @@ fi
 if [[ ! -d ~/.local/share/dotash ]]; then
     git clone https://github.com/kawaegle/dotash/ ~/.local/share/dotash
     if [[ ! -h ~/.local/bin/dotash ]]; then
-        ln -sf ~/.local/share/dotash ~/.local/bin/dotash
+        ln -sf ~/.local/share/dotash/dotash ~/.local/bin/dotash
     fi
 fi
