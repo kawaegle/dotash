@@ -8,7 +8,7 @@ if [[ -d ~/.local/share/dotash ]]; then
 fi
 
 if [[ ! -d ~/.local/share/dotash ]]; then
-    git clone git@github.com:kawaegle/dotash/ ~/.local/share/dotash
+    git clone https://github.com/kawaegle/dotash/ ~/.local/share/dotash
     if [[ ! -h ~/.local/bin/dotash ]]; then
         ln -sf ~/.local/share/dotash/dotash ~/.local/bin/dotash
     fi
